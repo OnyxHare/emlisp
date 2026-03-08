@@ -1,0 +1,7 @@
+[package]
+name = "emlisp"
+version = "0.1.0"
+edition = "2021"
+description = "A tiny Lisp implemented in Rust with Emacs-friendly development setup"
+
+[dependencies]
