@@ -24,6 +24,26 @@ answer
 (* answer 2)
 ```
 
+## emlisp-mode (Emacs major mode)
+
+`emlisp-mode.el` を同梱しています。`.emlisp` ファイルで次を提供します。
+
+- `define` / `print` のキーワードハイライト
+- `+ - * /` の組み込み演算子ハイライト
+- 数値・`nil` のハイライト
+- `;` から行末までのコメント
+- `lisp-indent-line` によるインデント
+
+### 設定例
+
+```elisp
+(add-to-list 'load-path "~/path/to/emlisp")
+(require 'emlisp-mode)
+
+;; 拡張子を追加したい場合
+(add-to-list 'auto-mode-alist '("\\.elispm\\'" . emlisp-mode))
+```
+
 ## Emacs で開発しやすくする設定
 
 このリポジトリには `.dir-locals.el` があり、`rust-mode` / `rustic-mode` で次を設定します。
