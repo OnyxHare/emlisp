@@ -22,11 +22,11 @@
   :group 'emlisp)
 
 (defconst emlisp-font-lock-keywords
-  '(("\\_<\\(define\\|if\\|print\\|\\|>\\)\\_>" . font-lock-keyword-face)
+  '(("\\_<\\(define\\|if\\|print\\|fn\\|fnr\\|\\|>\\)\\_>" . font-lock-keyword-face)
     ("\\_<\\(true\\|false\\|nil\\)\\_>" . font-lock-constant-face)
     ("\\_<:[[:word:]-]+\\_>" . font-lock-constant-face)
     ("\\_<[-+]?[0-9]+\\(?:\\.[0-9]+\\)?\\_>" . font-lock-constant-face)
-    ("(\\s-*\\([+*/-]\\)\\_>" 1 font-lock-builtin-face))
+    ("(\\s-*\\([+*/-]\\|<\\)\\_>" 1 font-lock-builtin-face))
   "Font-lock keywords for `emlisp-mode'.")
 
 (defvar emlisp-mode-syntax-table

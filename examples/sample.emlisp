@@ -1,0 +1,3 @@
+(define answer (+ 40 2))
+(print answer)
+(* answer 2)
