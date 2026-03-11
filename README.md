@@ -50,6 +50,19 @@ answer
 ((fn (self n) (if (< n 2) 1 (* n (self (- n 1))))) 5)
 ```
 
+## ハノイの塔は解ける？
+
+解けます。再帰関数で「最小手数」を計算できます。
+
+```bash
+cargo run -- examples/hanoi.emlisp
+```
+
+`examples/hanoi.emlisp` では次を実行します。
+
+- `3` 枚の最小手数を表示（`7`）
+- 最後の式として `10` 枚の最小手数（`1023`）を評価
+
 ## emlisp-mode (Emacs major mode)
 
 `emlisp-mode.el` を同梱しています。`.emlisp` ファイルで次を提供します。
