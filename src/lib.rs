@@ -2,18 +2,22 @@ use std::collections::HashMap;
 use std::fmt;
 use std::thread;
 
+mod number;
+
+use number::{parse_number, Number};
+
 const EVAL_STACK_SIZE_BYTES: usize = 1024 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
-    Number(f64),
+    Number(Number),
     Symbol(String),
     List(Vec<Expr>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
-    Number(f64),
+    Number(Number),
     Bool(bool),
     Atom(String),
     Lambda(Lambda),
@@ -27,18 +31,14 @@ pub struct Lambda {
     captured: HashMap<String, Value>,
     self_name: Option<String>,
     public_arity: usize,
-    auto_acc_init: Option<f64>,
+    auto_acc_init: Option<Number>,
 }
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Number(n) => {
-                if n.fract() == 0.0 {
-                    write!(f, "{}", *n as i64)
-                } else {
-                    write!(f, "{n}")
-                }
+                write!(f, "{n}")
             }
             Self::Bool(v) => write!(f, "{v}"),
             Self::Atom(atom) => write!(f, ":{atom}"),
@@ -188,7 +188,7 @@ fn parse_expr(tokens: &[String], pos: usize) -> Result<(Expr, usize), LispError>
         Err(LispError::Parse("missing closing ')'".into()))
     } else if token == ")" {
         Err(LispError::Parse("unexpected ')'".into()))
-    } else if let Ok(n) = token.parse::<f64>() {
+    } else if let Some(n) = parse_number(token) {
         Ok((Expr::Number(n), pos + 1))
     } else {
         Ok((Expr::Symbol(token.clone()), pos + 1))
@@ -225,7 +225,7 @@ fn eval_with_tail(
     in_tail_position: bool,
 ) -> Result<EvalControl, LispError> {
     match expr {
-        Expr::Number(n) => Ok(EvalControl::Value(Value::Number(*n))),
+        Expr::Number(n) => Ok(EvalControl::Value(Value::Number(n.clone()))),
         Expr::Symbol(name) => match name.as_str() {
             "true" => Ok(EvalControl::Value(Value::Bool(true))),
             "false" => Ok(EvalControl::Value(Value::Bool(false))),
@@ -393,7 +393,7 @@ fn auto_tail_transform_fnr(
     params: Vec<String>,
     body: Expr,
     self_name: Option<&str>,
-) -> (Vec<String>, Expr, Option<f64>) {
+) -> (Vec<String>, Expr, Option<Number>) {
     let Some(self_name) = self_name else {
         return (params, body, None);
     };
@@ -427,7 +427,11 @@ fn auto_tail_transform_fnr(
         Expr::Symbol(op) if op == "+" || op == "*" => op.clone(),
         _ => return (params, body, None),
     };
-    let acc_init = if op == "+" { 0.0 } else { 1.0 };
+    let acc_init = if op == "+" {
+        Number::from_i64(0)
+    } else {
+        Number::from_i64(1)
+    };
 
     let (step_expr, next_n) = match (&rec_items[1], &rec_items[2]) {
         (left, Expr::List(call)) if is_self_one_arg_call(call, self_name) => {
@@ -534,29 +538,40 @@ fn eval_arithmetic(
     }
 
     let result = match op {
-        "+" => numbers.into_iter().sum(),
-        "*" => numbers.into_iter().product(),
+        "+" => numbers
+            .into_iter()
+            .fold(Number::from_i64(0), |acc, n| acc + n),
+        "*" => numbers
+            .into_iter()
+            .fold(Number::from_i64(1), |acc, n| acc * n),
         "-" => {
-            let first = numbers[0];
+            let first = numbers[0].clone();
             if numbers.len() == 1 {
                 -first
             } else {
-                first - numbers[1..].iter().sum::<f64>()
+                first
+                    - numbers[1..]
+                        .iter()
+                        .cloned()
+                        .fold(Number::from_i64(0), |acc, n| acc + n)
             }
         }
         "/" => {
-            let first = numbers[0];
+            let first = numbers[0].clone();
             if numbers.len() == 1 {
-                if first == 0.0 {
+                if first.is_zero() {
                     return Err(LispError::Eval("division by zero".into()));
                 }
-                1.0 / first
+                first.reciprocal().expect("first is non-zero")
             } else {
-                let denom = numbers[1..].iter().product::<f64>();
-                if denom == 0.0 {
+                let denom = numbers[1..]
+                    .iter()
+                    .cloned()
+                    .fold(Number::from_i64(1), |acc, n| acc * n);
+                if denom.is_zero() {
                     return Err(LispError::Eval("division by zero".into()));
                 }
-                first / denom
+                first * denom.reciprocal().expect("denominator is non-zero")
             }
         }
         _ => unreachable!(),
@@ -624,29 +639,40 @@ fn apply_pipe_stage(
             }
 
             let result = match op.as_str() {
-                "+" => numbers.into_iter().sum(),
-                "*" => numbers.into_iter().product(),
+                "+" => numbers
+                    .into_iter()
+                    .fold(Number::from_i64(0), |acc, n| acc + n),
+                "*" => numbers
+                    .into_iter()
+                    .fold(Number::from_i64(1), |acc, n| acc * n),
                 "-" => {
-                    let first = numbers[0];
+                    let first = numbers[0].clone();
                     if numbers.len() == 1 {
                         -first
                     } else {
-                        first - numbers[1..].iter().sum::<f64>()
+                        first
+                            - numbers[1..]
+                                .iter()
+                                .cloned()
+                                .fold(Number::from_i64(0), |acc, n| acc + n)
                     }
                 }
                 "/" => {
-                    let first = numbers[0];
+                    let first = numbers[0].clone();
                     if numbers.len() == 1 {
-                        if first == 0.0 {
+                        if first.is_zero() {
                             return Err(LispError::Eval("division by zero".into()));
                         }
-                        1.0 / first
+                        first.reciprocal().expect("first is non-zero")
                     } else {
-                        let denom = numbers[1..].iter().product::<f64>();
-                        if denom == 0.0 {
+                        let denom = numbers[1..]
+                            .iter()
+                            .cloned()
+                            .fold(Number::from_i64(1), |acc, n| acc * n);
+                        if denom.is_zero() {
                             return Err(LispError::Eval("division by zero".into()));
                         }
-                        first / denom
+                        first * denom.reciprocal().expect("denominator is non-zero")
                     }
                 }
                 _ => unreachable!(),
@@ -673,7 +699,7 @@ fn truthy(value: &Value) -> bool {
     !matches!(value, Value::Bool(false) | Value::Nil)
 }
 
-fn value_to_number(value: Value) -> Result<f64, LispError> {
+fn value_to_number(value: Value) -> Result<Number, LispError> {
     match value {
         Value::Number(n) => Ok(n),
         Value::Bool(_) | Value::Atom(_) | Value::Nil | Value::Lambda(_) => Err(LispError::Eval(
@@ -686,6 +712,10 @@ fn value_to_number(value: Value) -> Result<f64, LispError> {
 mod tests {
     use super::*;
 
+    fn n(v: i64) -> Number {
+        Number::from_i64(v)
+    }
+
     #[test]
     fn parses_nested_expression() {
         let parsed = parse("(+ 1 (* 2 3))").expect("parse should succeed");
@@ -693,11 +723,11 @@ mod tests {
             parsed,
             Expr::List(vec![
                 Expr::Symbol("+".into()),
-                Expr::Number(1.0),
+                Expr::Number(n(1)),
                 Expr::List(vec![
                     Expr::Symbol("*".into()),
-                    Expr::Number(2.0),
-                    Expr::Number(3.0),
+                    Expr::Number(n(2)),
+                    Expr::Number(n(3)),
                 ])
             ])
         );
@@ -714,10 +744,10 @@ mod tests {
     fn evals_define_and_lookup() {
         let mut env = Env::default();
         let value = eval_source("(define answer (+ 40 2))", &mut env).expect("define should work");
-        assert_eq!(value, Value::Number(42.0));
+        assert_eq!(value, Value::Number(n(42)));
 
         let looked_up = eval_source("answer", &mut env).expect("symbol lookup should work");
-        assert_eq!(looked_up, Value::Number(42.0));
+        assert_eq!(looked_up, Value::Number(n(42)));
     }
 
     #[test]
@@ -737,15 +767,15 @@ mod tests {
         let mut env = Env::default();
         assert_eq!(
             eval_source("(+ 1 2 3 4)", &mut env).expect("+ should work"),
-            Value::Number(10.0)
+            Value::Number(n(10))
         );
         assert_eq!(
             eval_source("(- 10 3 2)", &mut env).expect("- should work"),
-            Value::Number(5.0)
+            Value::Number(n(5))
         );
         assert_eq!(
             eval_source("(/ 20 5)", &mut env).expect("/ should work"),
-            Value::Number(4.0)
+            Value::Number(n(4))
         );
     }
 
@@ -767,11 +797,11 @@ mod tests {
         let mut env = Env::default();
         assert_eq!(
             eval_source("(if true 10 0)", &mut env).expect("if true should work"),
-            Value::Number(10.0)
+            Value::Number(n(10))
         );
         assert_eq!(
             eval_source("(if false 10 0)", &mut env).expect("if false should work"),
-            Value::Number(0.0)
+            Value::Number(n(0))
         );
     }
 
@@ -780,7 +810,7 @@ mod tests {
         let mut env = Env::default();
         assert_eq!(
             eval_source("(|> 5 (+ 3) (* 2))", &mut env).expect("pipeline should work"),
-            Value::Number(16.0)
+            Value::Number(n(16))
         );
     }
 
@@ -790,7 +820,7 @@ mod tests {
         let src = "(define answer (+ 40 2))\n(* answer 2)";
         assert_eq!(
             eval_program(src, &mut env).expect("program eval should work"),
-            Value::Number(84.0)
+            Value::Number(n(84))
         );
     }
 
@@ -799,7 +829,7 @@ mod tests {
         let mut env = Env::default();
         assert_eq!(
             eval_source("((fn (x) (+ x 1)) 4)", &mut env).expect("anonymous function should work"),
-            Value::Number(5.0)
+            Value::Number(n(5))
         );
     }
 
@@ -809,7 +839,7 @@ mod tests {
         let src = "((fnr (self n) (if (< n 2) 1 (* n (self (- n 1))))) 5)";
         assert_eq!(
             eval_source(src, &mut env).expect("anonymous recursion should work"),
-            Value::Number(120.0)
+            Value::Number(n(120))
         );
     }
 
@@ -819,7 +849,7 @@ mod tests {
         let src = "((fnr (self n acc) (if (< n 1) acc (self (- n 1) (+ acc 1)))) 20000 0)";
         assert_eq!(
             eval_source(src, &mut env).expect("deep tail recursion should work"),
-            Value::Number(20000.0)
+            Value::Number(n(20000))
         );
     }
 
@@ -829,7 +859,7 @@ mod tests {
         let src = "((fnr (self n) (if (< n 1) 0 (+ 1 (self (- n 1))))) 5000)";
         assert_eq!(
             eval_source(src, &mut env).expect("deep non-tail recursion should work"),
-            Value::Number(5000.0)
+            Value::Number(n(5000))
         );
     }
 
@@ -839,7 +869,16 @@ mod tests {
         let src = "((fnr (self n) (if (< n 1) 0 (+ 1 (self (- n 1))))) 100000)";
         assert_eq!(
             eval_source(src, &mut env).expect("auto transformed non-tail recursion should work"),
-            Value::Number(100000.0)
+            Value::Number(n(100000))
+        );
+    }
+
+    #[test]
+    fn parses_decimal_as_exact_rational() {
+        let parsed = parse("3.14").expect("parse should succeed");
+        assert_eq!(
+            parsed,
+            Expr::Number(parse_number("3.14").expect("number parse"))
         );
     }
 }
