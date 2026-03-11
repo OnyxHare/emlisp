@@ -300,8 +300,7 @@ fn eval_list(
                 }
             }
             "|>" => eval_pipe(tail, env, self_name),
-            "fn" => eval_fn(tail, env, false).map(EvalControl::Value),
-            "fnr" => eval_fn(tail, env, true).map(EvalControl::Value),
+            "fn" => eval_fn(tail, env).map(EvalControl::Value),
             "print" => {
                 if tail.len() != 1 {
                     return Err(LispError::Eval("print expects exactly 1 argument".into()));
@@ -329,8 +328,8 @@ fn eval_list(
     }
 }
 
-fn eval_fn(args: &[Expr], env: &mut Env, recursive: bool) -> Result<Value, LispError> {
-    let form_name = if recursive { "fnr" } else { "fn" };
+fn eval_fn(args: &[Expr], env: &mut Env) -> Result<Value, LispError> {
+    let form_name = "fn";
     if args.len() != 2 {
         return Err(LispError::Eval(format!(
             "{form_name} expects exactly 2 arguments"
@@ -360,13 +359,10 @@ fn eval_fn(args: &[Expr], env: &mut Env, recursive: bool) -> Result<Value, LispE
         names.push(name.clone());
     }
 
+    let recursive = names.first().is_some_and(|name| name == "self") && names.len() >= 2;
+
     let (self_name, params) = if recursive {
         let self_name = names[0].clone();
-        if names.len() < 2 {
-            return Err(LispError::Eval(
-                "fnr parameter list must include self and at least one argument".into(),
-            ));
-        }
         (Some(self_name), names[1..].to_vec())
     } else {
         (None, names)
@@ -374,7 +370,7 @@ fn eval_fn(args: &[Expr], env: &mut Env, recursive: bool) -> Result<Value, LispE
 
     let public_arity = params.len();
     let (params, body, auto_acc_init) = if recursive {
-        auto_tail_transform_fnr(params, body, self_name.as_deref())
+        auto_tail_transform_fn(params, body, self_name.as_deref())
     } else {
         (params, body, None)
     };
@@ -389,7 +385,7 @@ fn eval_fn(args: &[Expr], env: &mut Env, recursive: bool) -> Result<Value, LispE
     }))
 }
 
-fn auto_tail_transform_fnr(
+fn auto_tail_transform_fn(
     params: Vec<String>,
     body: Expr,
     self_name: Option<&str>,
@@ -834,9 +830,9 @@ mod tests {
     }
 
     #[test]
-    fn evals_anonymous_recursion_with_fnr() {
+    fn evals_anonymous_recursion_with_fn() {
         let mut env = Env::default();
-        let src = "((fnr (self n) (if (< n 2) 1 (* n (self (- n 1))))) 5)";
+        let src = "((fn (self n) (if (< n 2) 1 (* n (self (- n 1))))) 5)";
         assert_eq!(
             eval_source(src, &mut env).expect("anonymous recursion should work"),
             Value::Number(n(120))
@@ -844,9 +840,9 @@ mod tests {
     }
 
     #[test]
-    fn supports_deep_tail_recursion_with_fnr() {
+    fn supports_deep_tail_recursion_with_fn() {
         let mut env = Env::default();
-        let src = "((fnr (self n acc) (if (< n 1) acc (self (- n 1) (+ acc 1)))) 20000 0)";
+        let src = "((fn (self n acc) (if (< n 1) acc (self (- n 1) (+ acc 1)))) 20000 0)";
         assert_eq!(
             eval_source(src, &mut env).expect("deep tail recursion should work"),
             Value::Number(n(20000))
@@ -854,9 +850,9 @@ mod tests {
     }
 
     #[test]
-    fn supports_deep_non_tail_recursion_with_fnr() {
+    fn supports_deep_non_tail_recursion_with_fn() {
         let mut env = Env::default();
-        let src = "((fnr (self n) (if (< n 1) 0 (+ 1 (self (- n 1))))) 5000)";
+        let src = "((fn (self n) (if (< n 1) 0 (+ 1 (self (- n 1))))) 5000)";
         assert_eq!(
             eval_source(src, &mut env).expect("deep non-tail recursion should work"),
             Value::Number(n(5000))
@@ -866,7 +862,7 @@ mod tests {
     #[test]
     fn auto_transforms_non_tail_recursion_for_large_depth() {
         let mut env = Env::default();
-        let src = "((fnr (self n) (if (< n 1) 0 (+ 1 (self (- n 1))))) 100000)";
+        let src = "((fn (self n) (if (< n 1) 0 (+ 1 (self (- n 1))))) 100000)";
         assert_eq!(
             eval_source(src, &mut env).expect("auto transformed non-tail recursion should work"),
             Value::Number(n(100000))
