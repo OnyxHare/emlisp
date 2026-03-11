@@ -870,6 +870,16 @@ mod tests {
     }
 
     #[test]
+    fn evals_hanoi_minimum_moves() {
+        let mut env = Env::default();
+        let src = "((fn (self n) (if (< n 1) 0 (+ (+ (self (- n 1)) 1) (self (- n 1))))) 10)";
+        assert_eq!(
+            eval_source(src, &mut env).expect("hanoi minimum moves should work"),
+            Value::Number(n(1023))
+        );
+    }
+
+    #[test]
     fn parses_decimal_as_exact_rational() {
         let parsed = parse("3.14").expect("parse should succeed");
         assert_eq!(
